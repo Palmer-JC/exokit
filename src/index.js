@@ -142,9 +142,6 @@ const dataPath = (() => {
   }
   return null;
 })();
-// const DEFAULT_FPS = 60; // TODO: Use different FPS for device.requestAnimationFrame vs window.requestAnimationFrame
-// const VR_FPS = 90;
-// const ML_FPS = 60;
 const MLSDK_PORT = 17955;
 
 const contexts = [];
@@ -153,7 +150,6 @@ const _windowHandleEquals = (a, b) => a[0] === b[0] && a[1] === b[1];
 
 const windows = [];
 GlobalContext.windows = windows;
-// const _getTopWindow = () => windows.find(window => window.top === window);
 
 nativeBindings.nativeGl.onconstruct = (gl, canvas) => {
   const canvasWidth = canvas.width || innerWidth;
@@ -287,7 +283,6 @@ nativeBindings.nativeGl.onconstruct = (gl, canvas) => {
   }
 
   contexts.push(gl);
-  // fps = nativeWindow.getRefreshRate();
 };
 
 nativeBindings.nativeCanvasRenderingContext2D.onconstruct = (ctx, canvas) => {
@@ -500,8 +495,6 @@ if (nativeBindings.nativeVr) {
         const windowHandle = context.getWindowHandle();
         nativeBindings.nativeWindow.setCurrentWindowContext(windowHandle);
 
-        // fps = VR_FPS;
-
         const vrContext = vrPresentState.vrContext || nativeBindings.nativeVr.getContext();
         const system = vrPresentState.system || nativeBindings.nativeVr.VR_Init(nativeBindings.nativeVr.EVRApplicationType.Scene);
         const compositor = vrPresentState.compositor || vrContext.compositor.NewCompositor();
@@ -557,12 +550,6 @@ if (nativeBindings.nativeVr) {
           canvas.removeListener('attribute', _attribute);
         });
 
-        /* window.top.updateVrFrame({
-          renderWidth: xrState.renderWidth[0],
-          renderHeight: xrState.renderHeight[0],
-          force: true,
-        }); */
-
         return canvas.framebuffer;
       } else if (canvas.ownerDocument.framebuffer) {
         const {width, height} = canvas;
@@ -578,9 +565,6 @@ if (nativeBindings.nativeVr) {
           depthTex,
         };
       } else {
-        /* const {width: halfWidth, height} = vrPresentState.system.GetRecommendedRenderTargetSize();
-        const width = halfWidth * 2; */
-
         const {msFbo, msTex, msDepthTex, fbo, tex, depthTex} = vrPresentState;
         return {
           width: xrState.renderWidth[0] * 2,
@@ -989,7 +973,6 @@ nativeBindings.nativeWindow.setEventHandler((type, data) => {
 
 let innerWidth = 1280; // XXX do not track this globally
 let innerHeight = 1024;
-// let fps = DEFAULT_FPS;
 const isMac = os.platform() === 'darwin';
 
 class XRState {
@@ -1300,11 +1283,6 @@ const _startRenderLoop = () => {
         vrPresentState.lmContext.WaitGetPoses(handsArray);
       } */
 
-      /* window.top.updateVrFrame({
-        frameData,
-        // handsArray,
-      }); */
-
       if (args.performance) {
         const now = Date.now();
         const diff = now - timestamps.last;
@@ -1432,12 +1410,6 @@ const _startRenderLoop = () => {
           rightGamepad.buttons[0].pressed[0] = rightPadPushed;
           controllersArrayIndex += 3;
         }
-
-        /* window.top.updateVrFrame({
-          // stageParameters,
-          gamepads,
-          context: mlPresentState.mlContext,
-        }); */
       }
 
       if (args.performance) {
