@@ -809,6 +809,7 @@ const _startRenderLoop = () => {
           } else if (fakePresentState.layers.length > 0) { // XXX blit only to the intended context
             nativeWindow.composeLayers(context, 0, fakePresentState.layers, xrState);
           }
+        }
 
         if (isMac) {
           context.bindFramebufferRaw(context.FRAMEBUFFER, null);
