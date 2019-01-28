@@ -56,6 +56,7 @@ const _decorateGlIntercepts = gl => {
   })(gl.getUniformLocation);
   gl.setCompatibleXRDevice = () => Promise.resolve();
 };
+let contextId = 0;
 const _onGl3DConstruct = (gl, canvas) => {
   const canvasWidth = canvas.width || innerWidth;
   const canvasHeight = canvas.height || innerHeight;
@@ -235,6 +236,8 @@ const _onGl3DConstruct = (gl, canvas) => {
     const title = `Exokit ${version}`;
     nativeWindow.setWindowTitle(windowHandle, title);
 
+    let framebuffer;
+
     const {hidden} = document;
     if (hidden) {
       const [fbo, tex, depthTex, msFbo, msTex, msDepthTex] = nativeWindow.createRenderTarget(gl, canvasWidth, canvasHeight, sharedColorTexture, sharedDepthStencilTexture, sharedMsColorTexture, sharedMsDepthStencilTexture);
@@ -246,9 +249,7 @@ const _onGl3DConstruct = (gl, canvas) => {
         nativeWindow.resizeRenderTarget(gl, width, height, fbo, tex, depthTex, msFbo, msTex, msDepthTex);
       };
 
-      // TODO: handle multiple child canvases
-      document.framebuffer = {
-        canvas,
+      framebuffer = {
         msFbo,
         msTex,
         msDepthTex,
@@ -306,29 +307,28 @@ const _onGl3DConstruct = (gl, canvas) => {
       } */
       canvas.ownerDocument.removeListener('domchange', ondomchange);
 
-      window.postMessage({
+      window.postInternalMessage({
+        type: 'postRequestAsync',
         method: 'context.destroy',
         args: {
-          address: gl.toAddressArray(),
+          id,
         },
       });
-      // contexts.splice(contexts.indexOf(gl), 1);
-
-      if (!contexts.some(context => nativeWindow.isVisible(context.getWindowHandle()))) { // XXX handle this in the parent
-        process.exit();
-      }
     })(gl.destroy);
   } else {
     gl.destroy();
   }
 
-  window.postMessage({ // XXX handle these
+  const id = ++contextId;
+  gl.id = id;
+  window.postInternalMessage({
+    type: 'postRequestAsync',
     method: 'context.create',
     args: {
-      address: gl.toAddressArray(),
+      id,
+      framebuffer,
     },
   });
-  // contexts.push(gl);
 };
 bindings.nativeGl = (nativeGl => {
   function WebGLRenderingContext(canvas) {
@@ -389,25 +389,27 @@ const _onGl2DConstruct = (ctx, canvas) => {
       nativeWindow.destroy(windowHandle);
       canvas._context = null;
       
-      window.postMessage({
+      window.postInternalMessage({
+        type: 'postRequestAsync',
         method: 'context.destroy',
         args: {
-          address: ctx.toAddressArray(),
+          id,
         },
       });
-      // contexts.splice(contexts.indexOf(ctx), 1);
     })(ctx.destroy);
   } else {
     ctx.destroy();
   }
-  
-  window.postMessage({
+
+  const id = ++contextId;
+  ctx.id = id;
+  window.postInternalMessage({
+    type: 'postRequestAsync',
     method: 'context.create',
     args: {
-      address: ctx.toAddressArray(),
+      id,
     },
   });
-  // contexts.push(ctx);
 };
 bindings.nativeCanvasRenderingContext2D = (nativeCanvasRenderingContext2D => {
   function CanvasRenderingContext2D(canvas) {
@@ -592,58 +594,32 @@ GlobalContext.nativeMl = bindings.nativeMl;
 GlobalContext.nativeBrowser = bindings.nativeBrowser;
 
 if (nativeVr) {
-  nativeVr.requestPresent = async function(layers) { // XXX handle this inside window context
+  const cleanups = [];
+  nativeVr.requestPresent = async function(layers) {
     const layer = layers.find(layer => layer && layer.source && layer.source.tagName === 'CANVAS');
     if (layer) {
       const canvas = layer.source;
       
-      if (!vrPresentState.glContext) {
+      if (!vrPresentState.glContext) { // XXX request existing context from the parent
         let context = canvas._context;
         if (!(context && context.constructor && context.constructor.name === 'WebGLRenderingContext')) {
           context = canvas.getContext('webgl');
         }
         const window = canvas.ownerDocument.defaultView;
 
-        await window.postRequest({ // XXX implement these
+        const {width, height} = await window.postInternalMessage({
+          type: 'postRequestAsync',
           method: 'requestPresentVr',
         });
         
         const windowHandle = context.getWindowHandle();
         nativeWindow.setCurrentWindowContext(windowHandle);
 
-        const vrContext = vrPresentState.vrContext || nativeVr.getContext();
-        const system = vrPresentState.system || nativeVr.VR_Init(nativeVr.EVRApplicationType.Scene);
-        const compositor = vrPresentState.compositor || vrContext.compositor.NewCompositor();
-
-        // const lmContext = vrPresentState.lmContext || (nativeLm && new nativeLm());
-
-        const {width: halfWidth, height} = system.GetRecommendedRenderTargetSize();
-        const width = halfWidth * 2;
-        xrState.renderWidth[0] = halfWidth;
-        xrState.renderHeight[0] = height;
-
-        const cleanups = [];
-
         const [fbo, tex, depthTex, msFbo, msTex, msDepthTex] = nativeWindow.createRenderTarget(context, width, height, 0, 0, 0, 0);
-
-        context.setDefaultFramebuffer(msFbo);
-
-        vrPresentState.isPresenting = true; // XXX make these objects use SharedArrayBuffer
-        vrPresentState.vrContext = vrContext; // XXX bubble this up to the top for WaitGetPoses/SubmitFrame
-        vrPresentState.system = system;
-        vrPresentState.compositor = compositor;
-        vrPresentState.glContext = context;
-        vrPresentState.msFbo = msFbo;
-        vrPresentState.msTex = msTex;
-        vrPresentState.msDepthTex = msDepthTex;
-        vrPresentState.fbo = fbo;
-        vrPresentState.tex = tex;
-        vrPresentState.depthTex = depthTex;
-        vrPresentState.cleanups = cleanups;
 
         // vrPresentState.lmContext = lmContext;
 
-        canvas.framebuffer = { // XXX bubble this up to the top for layers support
+        const framebuffer = {
           width,
           height,
           msFbo,
@@ -653,6 +629,14 @@ if (nativeVr) {
           tex,
           depthTex,
         };
+        await window.postInternalMessage({
+          type: 'postRequestAsync',
+          method: 'vr.bind',
+          id: context.id,
+          framebuffer,
+        });
+        
+        context.setDefaultFramebuffer(msFbo);
 
         const _attribute = (name, value) => {
           if (name === 'width' || name === 'height') {
@@ -666,7 +650,7 @@ if (nativeVr) {
           canvas.removeListener('attribute', _attribute);
         });
 
-        return canvas.framebuffer;
+        return framebuffer;
       } else if (canvas.ownerDocument.framebuffer) {
         const {width, height} = canvas;
         const {msFbo, msTex, msDepthTex, fbo, tex, depthTex} = canvas.ownerDocument.framebuffer;
@@ -698,12 +682,10 @@ if (nativeVr) {
     }
   };
   nativeVr.exitPresent = await function() {
-    await window.postRequest({
-      method: 'exitPresentVr',
-    });
-    
     if (vrPresentState.isPresenting) {
-      nativeVr.VR_Shutdown();
+      await window.postRequest({
+        method: 'exitPresentVr',
+      });
 
       nativeWindow.destroyRenderTarget(vrPresentState.msFbo, vrPresentState.msTex, vrPresentState.msDepthStencilTex);
       nativeWindow.destroyRenderTarget(vrPresentState.fbo, vrPresentState.tex, vrPresentState.msDepthTex);
@@ -712,21 +694,10 @@ if (nativeVr) {
       nativeWindow.setCurrentWindowContext(context.getWindowHandle());
       context.setDefaultFramebuffer(0);
 
-      for (let i = 0; i < vrPresentState.cleanups.length; i++) {
-        vrPresentState.cleanups[i]();
+      for (let i = 0; i < cleanups.length; i++) {
+        cleanups[i]();
       }
-
-      vrPresentState.isPresenting = false;
-      vrPresentState.system = null;
-      vrPresentState.compositor = null;
-      vrPresentState.glContext = null;
-      vrPresentState.msFbo = null;
-      vrPresentState.msTex = null;
-      vrPresentState.msDepthTex = null;
-      vrPresentState.fbo = null;
-      vrPresentState.tex = null;
-      vrPresentState.depthTex = null;
-      vrPresentState.cleanups = null;
+      cleanups.length = 0;
     }
 
     return Promise.resolve();
@@ -734,12 +705,8 @@ if (nativeVr) {
 }
 
 if (nativeMl) {
-  mlPresentState.mlContext = new nativeMl(); // XXX move this to on present
-  nativeMl.requestPresent = async function(layers) { // XXX handle this inside window context
-    await window.postRequest({
-      method: 'requestPresentMl',
-    });
-  
+  const cleanups = [];
+  nativeMl.requestPresent = async function(layers) {
     const layer = layers.find(layer => layer && layer.source && layer.source.tagName === 'CANVAS');
     if (layer) {
       const canvas = layer.source;
@@ -750,37 +717,17 @@ if (nativeMl) {
           context = canvas.getContext('webgl');
         }
 
+        const {width, height} = await window.postInternalMessage({
+          type: 'postRequestAsync',
+          method: 'requestPresentMl',
+        });
+
         const windowHandle = context.getWindowHandle();
         nativeWindow.setCurrentWindowContext(windowHandle);
 
-        mlPresentState.mlContext.Present(windowHandle, context);
-
-        const {width: halfWidth, height} = mlPresentState.mlContext.GetSize();
-        const width = halfWidth * 2;
-
         const [fbo, tex, depthTex, msFbo, msTex, msDepthTex] = nativeWindow.createRenderTarget(context, width, height, 0, 0, 0, 0);
-        mlPresentState.mlContext.SetContentTexture(tex);
-        /* const {
-          width: halfWidth,
-          height,
-          fbo,
-          colorTex: tex,
-          depthStencilTex: depthTex,
-          msFbo,
-          msColorTex: msTex,
-          msDepthStencilTex: msDepthTex,
-        } = initResult; */
-        xrState.renderWidth[0] = halfWidth;
-        xrState.renderHeight[0] = height;
 
-        mlPresentState.mlFbo = fbo;
-        mlPresentState.mlTex = tex;
-        mlPresentState.mlDepthTex = depthTex;
-        mlPresentState.mlMsFbo = msFbo;
-        mlPresentState.mlMsTex = msTex;
-        mlPresentState.mlMsDepthTex = msDepthTex;
-
-        canvas.framebuffer = {
+        const framebuffer = {
           width,
           height,
           msFbo,
@@ -790,9 +737,12 @@ if (nativeMl) {
           tex,
           depthTex,
         };
-
-        const cleanups = [];
-        mlPresentState.mlCleanups = cleanups;
+        await window.postInternalMessage({
+          type: 'postRequestAsync',
+          method: 'ml.bind',
+          id: context.id,
+          framebuffer,
+        });
 
         const _attribute = (name, value) => {
           if (name === 'width' || name === 'height') {
@@ -808,9 +758,7 @@ if (nativeMl) {
 
         context.setDefaultFramebuffer(msFbo);
 
-        mlPresentState.mlGlContext = context;
-
-        return canvas.framebuffer;
+        return framebuffer;
       } else if (canvas.ownerDocument.framebuffer) {
         const {width, height} = canvas;
         const {msFbo, msTex, msDepthTex, fbo, tex, depthTex} = canvas.ownerDocument.framebuffer;
@@ -852,19 +800,10 @@ if (nativeMl) {
     nativeWindow.setCurrentWindowContext(mlPresentState.mlGlContext.getWindowHandle());
     mlPresentState.mlGlContext.setDefaultFramebuffer(0);
 
-    for (let i = 0; i < mlPresentState.mlCleanups.length; i++) {
-      mlPresentState.mlCleanups[i]();
+    for (let i = 0; i < cleanups.length; i++) {
+      cleanups[i]();
     }
-
-    mlPresentState.mlFbo = null;
-    mlPresentState.mlTex = null;
-    mlPresentState.mlDepthTex = null;
-    mlPresentState.mlMsFbo = null;
-    mlPresentState.mlMsTex = null;
-    mlPresentState.mlMsDepthTex = null;
-    mlPresentState.mlGlContext = null;
-    mlPresentState.mlCleanups = null;
-    mlPresentState.mlHasPose = false;
+    cleanups.length = 0;
   };
 
   const _mlLifecycleEvent = e => {
