@@ -314,6 +314,7 @@ const _onGl3DConstruct = (gl, canvas) => {
           id,
         },
       });
+      GlobalContext.contexts.splice(GlobalContext.contexts.indexOf(gl), 1);
     })(gl.destroy);
   } else {
     gl.destroy();
@@ -329,6 +330,7 @@ const _onGl3DConstruct = (gl, canvas) => {
       framebuffer,
     },
   });
+  GlobalContext.contexts.push(gl);
 };
 bindings.nativeGl = (nativeGl => {
   function WebGLRenderingContext(canvas) {
@@ -396,6 +398,7 @@ const _onGl2DConstruct = (ctx, canvas) => {
           id,
         },
       });
+      GlobalContext.contexts.splice(GlobalContext.contexts.indexOf(ctx), 1);
     })(ctx.destroy);
   } else {
     ctx.destroy();
@@ -410,6 +413,7 @@ const _onGl2DConstruct = (ctx, canvas) => {
       id,
     },
   });
+  GlobalContext.contexts.push(ctx);
 };
 bindings.nativeCanvasRenderingContext2D = (nativeCanvasRenderingContext2D => {
   function CanvasRenderingContext2D(canvas) {
