@@ -11,7 +11,14 @@ const util = require('util');
 const {URL} = url;
 const {TextEncoder, TextDecoder} = util;
 const {performance} = require('perf_hooks');
-const {workerData: {args: options}} = require('worker_threads');
+const {
+  workerData: {
+    args: {
+      options,
+      xrState,
+    },
+  },
+} = require('worker_threads');
 
 const mkdirp = require('mkdirp');
 
@@ -96,8 +103,9 @@ const {
   nativeWindow,
 } = bindings;
 
-GlobalContext.args = {};
-GlobalContext.version = '';
+// GlobalContext.args = {};
+// GlobalContext.version = '';
+GlobalContext.xrState = xrState;
 
 // Class imports.
 const {_parseDocument, _parseDocumentAst, Document, DocumentFragment, DocumentType, DOMImplementation, initDocument} = require('./Document');
