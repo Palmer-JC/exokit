@@ -807,7 +807,7 @@ const _startRenderLoop = () => {
 
             // nativeWindow.blitFrameBuffer(context, mlPresentState.mlFbo, 0, mlPresentState.mlGlContext.canvas.width, mlPresentState.mlGlContext.canvas.height, xrState.renderWidth[0], xrState.renderHeight[0], true, false, false);
           } else if (fakePresentState.layers.length > 0) { // XXX blit only to the intended context
-            nativeWindow.composeLayers(context, 0, fakePresentState.layers, xrState);
+            nativeWindow.composeLayers(context, 0, fakePresentState.layers, xrState); // XXX move this into the owning window
           }
         }
 
